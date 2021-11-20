@@ -1227,20 +1227,53 @@ defmodule Registry do
     guards = [{:"=:=", {:element, 1, :"$_"}, {:const, key}} | guards]
     spec = [{{:_, {:_, pattern}}, guards, [true]}]
 
-    case key_info!(registry) do
-      {:unique, partitions, key_ets} ->
-        key_ets = key_ets || key_ets!(registry, key, partitions)
-        :ets.select_count(key_ets, spec)
+    count_entries(registry, spec, fn partitions ->
+      :ets.select_count(key_ets!(registry, key, partitions), spec)
+    end)
+  end
 
-      {:duplicate, 1, key_ets} ->
+  @doc """
+  Works like `select/2`, but only returns the number of matching records.
+
+  ## Examples
+
+  In the example below we register the current process under different
+  keys in a unique registry but with the same value:
+
+      iex> Registry.start_link(keys: :unique, name: Registry.CountSelectTest)
+      iex> {:ok, _} = Registry.register(Registry.CountSelectTest, "hello", :value)
+      iex> {:ok, _} = Registry.register(Registry.CountSelectTest, "world", :value)
+      iex> Registry.count_select(Registry.CountSelectTest, [{{:_, :_, :value}, [], [true]}])
+      2
+  """
+  @spec count_select(registry, spec) :: non_neg_integer()
+  def count_select(registry, spec)
+      when is_atom(registry) and is_list(spec) do
+    spec = group_match_headers(spec, __ENV__.function)
+
+    count_entries(registry, spec, fn partitions ->
+      count_across_partitions(registry, partitions, spec)
+    end)
+  end
+
+  defp count_entries(registry, spec, count_across_unique_partitions_fun) do
+    case key_info!(registry) do
+      {:unique, partitions, nil} ->
+        count_across_unique_partitions_fun.(partitions)
+
+      {_kind, 1, key_ets} ->
         :ets.select_count(key_ets, spec)
 
       {:duplicate, partitions, _key_ets} ->
-        Enum.reduce(0..(partitions - 1), 0, fn partition_index, acc ->
-          count = :ets.select_count(key_ets!(registry, partition_index), spec)
-          acc + count
-        end)
+        count_across_partitions(registry, partitions, spec)
     end
+  end
+
+  defp count_across_partitions(registry, partitions, spec) do
+    Enum.reduce(0..(partitions - 1), 0, fn partition_index, acc ->
+      count = :ets.select_count(key_ets!(registry, partition_index), spec)
+      acc + count
+    end)
   end
 
   @doc """
@@ -1295,17 +1328,7 @@ defmodule Registry do
   @spec select(registry, spec) :: [term]
   def select(registry, spec)
       when is_atom(registry) and is_list(spec) do
-    spec =
-      for part <- spec do
-        case part do
-          {{key, pid, value}, guards, select} ->
-            {{key, {pid, value}}, guards, select}
-
-          _ ->
-            raise ArgumentError,
-                  "invalid match specification in Registry.select/2: #{inspect(spec)}"
-        end
-      end
+    spec = group_match_headers(spec, __ENV__.function)
 
     case key_info!(registry) do
       {_kind, partitions, nil} ->
@@ -1318,44 +1341,16 @@ defmodule Registry do
     end
   end
 
-  @doc """
-  Works like `select/2`, but only returns the number of matching records.
+  defp group_match_headers(spec, {fun, arity}) do
+    for part <- spec do
+      case part do
+        {{key, pid, value}, guards, select} ->
+          {{key, {pid, value}}, guards, select}
 
-  ## Examples
-
-  In the example below we register the current process under different
-  keys in a unique registry but with the same value:
-
-      iex> Registry.start_link(keys: :unique, name: Registry.CountSelectTest)
-      iex> {:ok, _} = Registry.register(Registry.CountSelectTest, "hello", :value)
-      iex> {:ok, _} = Registry.register(Registry.CountSelectTest, "world", :value)
-      iex> Registry.count_select(Registry.CountSelectTest, [{{:_, :_, :value}, [], [true]}])
-      2
-  """
-  @spec count_select(registry, spec) :: non_neg_integer()
-  def count_select(registry, spec)
-      when is_atom(registry) and is_list(spec) do
-    spec =
-      for part <- spec do
-        case part do
-          {{key, pid, value}, guards, select} ->
-            {{key, {pid, value}}, guards, select}
-
-          _ ->
-            raise ArgumentError,
-                  "invalid match specification in Registry.count_select/2: #{inspect(spec)}"
-        end
+        _ ->
+          raise ArgumentError,
+                "invalid match specification in Registry.#{fun}/#{arity}: #{inspect(spec)}"
       end
-
-    case key_info!(registry) do
-      {_kind, partitions, nil} ->
-        Enum.reduce(0..(partitions - 1), 0, fn partition_index, acc ->
-          count = :ets.select_count(key_ets!(registry, partition_index), spec)
-          acc + count
-        end)
-
-      {_kind, 1, key_ets} ->
-        :ets.select_count(key_ets, spec)
     end
   end
 

@@ -88,6 +88,23 @@ defmodule Tuple do
   end
 
   @doc """
+  Returns a tuple with a replaced value at the specified `index`.
+
+  Raises an `ArgumentError` if `index` is negative or greater than the
+  length of `tuple`. Index is zero-based.
+
+  ## Examples
+
+      iex> Tuple.replace_at({:foo, :bar}, 1, :baz)
+      {:foo, :baz}
+
+  """
+  @spec replace_at(tuple, integer, any) :: tuple
+  def replace_at(tuple, index, value) when is_tuple(tuple) and is_integer(index) do
+    :erlang.setelement(index + 1, tuple, value)
+  end
+
+  @doc """
   Inserts an element at the end of a tuple.
 
   Returns a new tuple with the element appended at the end, and contains

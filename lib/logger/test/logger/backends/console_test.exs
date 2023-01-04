@@ -72,6 +72,15 @@ defmodule Logger.Backends.ConsoleTest do
              "domain=elixir.foobar hello"
   end
 
+  test "preserves existing domain set in process metadata" do
+    Logger.configure_backend(:console, format: "$metadata$message", metadata: [:domain])
+
+    Logger.metadata(domain: [:foobar])
+
+    assert capture_log(fn -> Logger.debug("hello") end) =~
+             "domain=elixir.foobar hello"
+  end
+
   test "logs mfa as metadata" do
     Logger.configure_backend(:console, format: "$metadata$message", metadata: [:mfa])
     {function, arity} = __ENV__.function

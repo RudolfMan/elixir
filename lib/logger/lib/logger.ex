@@ -900,7 +900,15 @@ defmodule Logger do
     %{metadata | domain: [:elixir | domain]}
   end
 
-  defp add_elixir_domain(metadata), do: Map.put(metadata, :domain, [:elixir])
+  defp add_elixir_domain(metadata) do
+    domain =
+      case :logger.get_process_metadata() do
+        %{domain: domain} -> [:elixir | domain]
+        _ -> [:elixir]
+      end
+
+    Map.put(metadata, :domain, domain)
+  end
 
   translations = %{
     emergency: :error,

@@ -96,6 +96,12 @@ defmodule MapTest do
     assert Map.new(MapSet.new(a: 1, b: 2, a: 3), transformer) == %{b: 4, a: 6}
   end
 
+  test "validate/2 raises on invalid arguments" do
+    assert_raise ArgumentError,
+                 "expected the second argument to be a list of atoms or tuples, got: 3",
+                 fn -> Map.validate(%{three: 3}, [:three, 3, :two]) end
+  end
+
   test "take/2" do
     assert Map.take(%{a: 1, b: 2, c: 3}, [:b, :c]) == %{b: 2, c: 3}
     assert Map.take(%{a: 1, b: 2, c: 3}, []) == %{}
@@ -262,9 +268,7 @@ defmodule MapTest do
              keyword?: 1,
              pop_first: 2,
              pop_first: 3,
-             pop_values: 2,
-             validate: 2,
-             validate!: 2
+             pop_values: 2
            ]
   end
 

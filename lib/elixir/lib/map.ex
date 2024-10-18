@@ -264,6 +264,131 @@ defmodule Map do
   end
 
   @doc """
+  Ensures the given `map` has only the keys given in `values`.
+
+  The second argument must be a list of atoms, specifying
+  a given key, or tuples specifying a key and a default value.
+
+  If the map has only the given keys, it returns `{:ok, map}`
+  with default values applied. Otherwise it returns `{:error, invalid_keys}`
+  with invalid keys.
+
+  See also: `validate!/2`.
+
+  ## Examples
+
+      iex> Map.validate(%{}, [one: 1, two: 2])
+      {:ok, %{one: 1, two: 2}}
+
+      iex> Map.validate(%{two: 3}, [one: 1, two: 2])
+      {:ok, %{one: 1, two: 3}}
+
+  If atoms are given, they are supported as keys but do not
+  provide a default value:
+
+      iex> Map.validate(%{}, [:one, two: 2])
+      {:ok, %{two: 2}}
+
+      iex> Map.validate(%{one: 1}, [:one, two: 2])
+      {:ok, %{one: 1, two: 2}}
+
+  Passing unknown keys returns an error:
+
+      iex> Map.validate(%{three: 3, four: 4}, [one: 1, two: 2])
+      {:error, [:four, :three]}
+  """
+  @spec validate(map(), values :: [atom() | keyword()]) ::
+          {:ok, map()} | {:error, [atom]}
+  def validate(map, values) when is_map(map) and is_list(values) do
+    {values1, values2, acc, bad_keys} =
+      :maps.fold(
+        fn key, val, {values1, values2, acc, bad_keys} ->
+          case find_key!(key, values, values2) do
+            {values1, values2} ->
+              {values1, values2, [{key, val} | acc], bad_keys}
+
+            :error ->
+              {values1, values2, acc, [key | bad_keys]}
+          end
+        end,
+        {values, [], [], []},
+        map
+      )
+
+    case bad_keys do
+      [] -> {:ok, Map.new(move_pairs!(values1, move_pairs!(values2, acc)))}
+      _ -> {:error, bad_keys}
+    end
+  end
+
+  defp find_key!(key, [key | rest], acc), do: {rest, acc}
+  defp find_key!(key, [{key, _} | rest], acc), do: {rest, acc}
+  defp find_key!(key, [head | tail], acc), do: find_key!(key, tail, [head | acc])
+  defp find_key!(_key, [], _acc), do: :error
+
+  defp move_pairs!([key | rest], acc) when is_atom(key),
+    do: move_pairs!(rest, acc)
+
+  defp move_pairs!([{key, _} = pair | rest], acc) when is_atom(key),
+    do: move_pairs!(rest, [pair | acc])
+
+  defp move_pairs!([], acc),
+    do: acc
+
+  defp move_pairs!([other | _], _) do
+    raise ArgumentError,
+          "expected the second argument to be a list of atoms or tuples, got: #{inspect(other)}"
+  end
+
+  @doc """
+  Similar to `validate/2` but returns the map or raises an error.
+
+  ## Examples
+
+      iex> Map.validate!(%{}, [one: 1, two: 2])
+      %{one: 1, two: 2}
+      iex> Map.validate!(%{two: 3}, [one: 1, two: 2])
+      %{one: 1, two: 3}
+
+  If atoms are given, they are supported as keys but do not
+  provide a default value:
+
+      iex> Map.validate!(%{}, [:one, two: 2])
+      %{two: 2}
+      iex> Map.validate!(%{one: 1}, [:one, two: 2])
+      %{one: 1, two: 2}
+
+  Passing unknown keys raises an error:
+
+      iex> Map.validate!(%{three: 3}, [one: 1, two: 2])
+      ** (ArgumentError) unknown keys [:three] in %{three: 3}, the allowed keys are: [:one, :two]
+  """
+  @spec validate!(map(), values :: [atom() | keyword()]) :: map()
+  def validate!(map, values) do
+    case validate(map, values) do
+      {:ok, map} ->
+        map
+
+      {:error, invalid_keys} ->
+        keys =
+          for value <- values,
+              do: if(is_atom(value), do: value, else: elem(value, 0))
+
+        message =
+          case Enum.split_with(invalid_keys, &(&1 in keys)) do
+            {_, [_ | _] = unknown} ->
+              "unknown keys #{inspect(unknown)} in #{inspect(map)}, " <>
+                "the allowed keys are: #{inspect(keys)}"
+
+            {[_ | _] = known, _} ->
+              "duplicate keys #{inspect(known)} in #{inspect(map)}"
+          end
+
+        raise ArgumentError, message
+    end
+  end
+
+  @doc """
   Returns whether the given `key` exists in the given `map`.
 
   Inlined by the compiler.
